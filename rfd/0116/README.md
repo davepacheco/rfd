@@ -128,10 +128,13 @@ We will explore these three options in a time-bounded way so that we can decide
 on the most promising path and implement it.
 
 If we pursue an off-the-shelf component, it would ideally satisfy several
-requirements below, plus two additional quantitative requirements below:
+qualitative and quantitative requirements below.
+
+### Qualitative requirements
 
 * It should be **open-source.**
 * It should run inside a SmartOS or LX-branded zone.
+* It has to support the PUT, GET, LIST, and DELETE operations that we need.
 * It should provide strong **durability** guarantees: corruption of the
   database, even in the face of ungraceful fatal failure of either hardware or
   software should be virtually unheard of.  Such failures include system resets,
@@ -177,15 +180,16 @@ requirements below, plus two additional quantitative requirements below:
   **programming environments** that we're willing to deploy, though nothing is
   off the table at this point.
 
-There are two quantitative requirements:
+### Quantitative requirements
 
 * It should provide substantial **write throughput** (in terms of
   metadata-records-written-per-second), even in the face if simultaneous reads.
   **Read latency and throughput** are also important.
-* It should be cost-efficient.  We will focus first on storage efficiency (e.g.,
-  disk bytes required per object stored) and resource efficiency (e.g., memory,
-  CPU, and network bandwidth required to satisfy a given level of workload),
-  though ultimately these are mostly proxies for cost efficiency.
+* It should be **cost-efficient**.  We will focus first on **storage
+  efficiency** (e.g., disk bytes required per object stored) and **resource
+  efficiency** (e.g., memory, CPU, and network bandwidth required to satisfy a
+  given level of workload), though ultimately these are mostly proxies for cost
+  efficiency.
 
 This is obviously quite a high bar, and it's possible that no existing component
 satisfies all of these requirements.  But ultimately, the above is what we're
@@ -193,7 +197,7 @@ charged with building.  We will consider solutions that don't meet all of the
 above provided that we can use them as the foundation for what we need to build.
 
 
-## Other considerations
+### Other considerations
 
 * **Strong consistency** is not a hard requirement at this stage, though it's
   likely that a system would have to be truly an excellent match on most of the
