@@ -265,7 +265,7 @@ in timeout errors from clients.  These are covered by
 fixed.  These issues were generally root-caused from the initial occurrences
 using postmortem debugging (i.e., core files and mdb\_v8).  They were fixed and
 the fixes deployed within a few days.  We also had instances that were more
-complex to debug (such as [MANTA-3338](https://smartos.org/bugview/MANTA-3338).)
+complex to debug (such as [MANTA-3338](https://smartos.org/bugview/MANTA-3338)).
 
 **Network switch failures.**  In JPC, NETOPS-852 (blocked ports resulting from a
 firmware issue on certain switches) has resulted in a number of storage zones
@@ -330,9 +330,9 @@ postgres: unplanned takeover time | high     | [MANTA-3260](https://smartos.org/
 webapi: planned updates           | moderate | [MANTA-2834](https://smartos.org/bugview/MANTA-2834)
 loadbalancer: planned upates      | moderate | N/A -- needs further specification
 resharding: write downtime        | moderate | [MANTA-3584](https://smartos.org/bugview/MANTA-3584)
-moray: planned updates            | low      | [MANTA-3233](https://smartos.org/bugview/MANTA-3233)
+moray: planned updates            | low      | [MANTA-2834](https://smartos.org/bugview/MANTA-2834), [MANTA-3233](https://smartos.org/bugview/MANTA-3233)
 electric-moray: planned updates   | low      | [MANTA-2834](https://smartos.org/bugview/MANTA-2834), [MANTA-3232](https://smartos.org/bugview/MANTA-3232)
-authcache: planned updates        | very low | [MANTA-3585](https://smartos.org/bugview/MANTA-3585)
+authcache: planned updates        | very low | [MANTA-2834](https://smartos.org/bugview/MANTA-2834), [MANTA-3585](https://smartos.org/bugview/MANTA-3585)
 storage: planned updates          | very low | [MANTA-3586](https://smartos.org/bugview/MANTA-3586)
 postgres: major version bump      | very low | N/A -- needs further specification
 
