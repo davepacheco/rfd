@@ -21,6 +21,14 @@ considers only data path availability, not availability of the jobs tier or any
 of the system's internal functions (like garbage collection, metering, auditing,
 and resharding).
 
+This RFD is divided into several sections:
+
+- Defining data path availability
+- Measuring error count and latency
+- Causes of data path unavailability (a survey of known causes of downtime)
+- Suggested software changes
+- Possible process changes
+
 
 ## Defining data path availability
 
@@ -149,7 +157,7 @@ the last year has resulted not from simple component failure described above,
 but more complex failures.  These are not so easily categorizable, so we will
 take them in turn.
 
-**PostgreSQL lag and associated issues.**  In 2017, we discovered that Manta was
+**PostgreSQL lag and associated issues.**  In 2017, we found that Manta was
 susceptible to major downtime incidents relating to PostgreSQL replication lag.
 This has been discussed extensively in tickets like
 [MANTA-3283](https://smartos.org/bugview/MANTA-3283), MANTA-3402, and many
@@ -159,9 +167,10 @@ accumulate:
 - replication replay lag, which reflects transactions that have been replicated
   but not yet applied.  This can accumulate without bound on both sync and
   async peers.  Failover time is bounded below by the time required to replay
-  these transactions, and this is unavaoidable.  Further, transient replication
-  failures (e.g., a TCP connection failure between primary and sync) can result
-  in downtime windows for the time required to catch up again.
+  these transactions, and this is a constraint from PostgreSQL.  Further,
+  transient replication failures (e.g., a TCP connection failure between primary
+  and sync) can result in downtime windows for the time required to catch up
+  again.
 - checkpoint lag, which reflects data replicated and applied, but not yet
   checkpointed.  This affects primaries, syncs, and asyncs.  With the current
   Manatee implementation, failover time is bounded below by the time required to
@@ -174,15 +183,15 @@ factors that contribute to high write volume:
 
 - High client write volume intrinsically results in large WAL volume.  This is
   unavoidable, but is believed to be a small part of the problem (relative to
-  the following issues).
+  other issues below).
 - The current Manta schema is believed to contribute to more WAL writes than
   necessary: see MANTA-3399,
   [MANTA-3401](https://smartos.org/bugview/MANTA-3401).  Addressing this
   requires [MORAY-424](https://smartos.org/bugview/MORAY-424) and
   [MORAY-425](https://smartos.org/bugview/MORAY-425).  (These changes may also
   significantly improve the overall object write throughput of each shard.)
-- This in turn was exacerbated by the directory structure used for multi-part
-  uploads.  This was fixed in the software under
+- This in turn was exacerbated by the default directory structure used for
+  multi-part uploads.  This was fixed in the software under
   [MANTA-3427](https://smartos.org/bugview/MANTA-3427) and
   [MANTA-3480](https://smartos.org/bugview/MANTA-3480) and deployed under
   CM-1356.
@@ -196,20 +205,20 @@ performance, which was caused by a number of issues:
   worked around this (fairly successfully) by creating our own prefetcher,
   called [pg\_prefaulter](https://github.com/joyent/pg_prefaulter).
 - Databases were initially deployed with a 16K recordsize (see
-  [MANATEE-330](https://smartos.org/bugview/MANATEE-330).  Because PostgreSQL
+  [MANATEE-330](https://smartos.org/bugview/MANATEE-330)).  Because PostgreSQL
   writes 8K blocks, a large number of PostgreSQL write operations required a
   read-modify-write in ZFS.  Once the database size exceeded physical memory,
-  the streaming write workload effectively became a random read workload from
-  spindles.  We changed the recordsize for new deployments to 8K under
+  the streaming write workload effectively became a random read workload.  We
+  changed the recordsize for new deployments to 8K under
   [MANATEE-370](https://smartos.org/bugview/MANATEE-370), and we applied that
   operationally to the SPC under MANTA-3453, CM-1329, and CM-1341.  The
   mismatched record size was a major contributor to both replay lag and
   checkpoint lag.
-- One US deployment used a particular model of disk drive that we found
-  frequently starved read operations in the face of writes.  Ticket ROGUE-28
-  describes in detail how a round of read operations would remain outstanding
-  while the disk completed several rounds of write operations.  We have removed
-  this model of disk from all SPC deployments.
+- One deployment used a particular model of disk drive that we found would
+  starve read operations in the face of writes.  Ticket ROGUE-28 describes in
+  detail how a round of read operations would remain outstanding while the disk
+  completed several rounds of write operations.  We have removed this model of
+  disk from all SPC deployments.
 
 The combination of these last three issues was especially devastating: what
 should have been a streaming write workload became a random-read workload from a
@@ -253,40 +262,15 @@ in timeout errors from clients.  These are covered by
 [MORAY-454](https://smartos.org/bugview/MORAY-454),
 [MANTA-3538](https://smartos.org/bugview/MANTA-3538), and
 [MORAY-455](https://smartos.org/bugview/MORAY-455), all of which have been
-addressed.  These issues were generally root-caused from the initial occurrences
+fixed.  These issues were generally root-caused from the initial occurrences
 using postmortem debugging (i.e., core files and mdb\_v8).  They were fixed and
 the fixes deployed within a few days.  We also had instances that were more
 complex to debug (such as [MANTA-3338](https://smartos.org/bugview/MANTA-3338).)
 
-**Accumulated network failures.**  In JPC, NETOPS-852 (blocked ports, resulting
-from a firmware issue on certain switches) has resulted in a number of storage
-zones becomes unreachable.  This has resulted in at least two incidents in which
-not enough storage zones were available to allow Manta to take any writes.
-
-**Insufficient storage capacity.**  In several SPC deployments, Manta ran out of
-capacity well ahead of the ability to provision more.  This seems worth
-mentioning, but this failure mode is beyond the scope of this RFD.
-
-<!--
-
-XXX consider having a long table of tickets instead of prose for the smaller
-issues?
-
-XXX construct summarizing with a large table of tickets, expected severity, and
-resolution status?
-At the very least, want a discrete list of planned work, I think.
-
--->
-
-
-### Less common availability issues
-
-**Transit issues.** A number of client-visible incidents have resulted from
-failures in the network circuits being used between clients and Manta.  These
-are beyond the scope of this RFD.
-
-**Transient connection management issues.**  A very small ambient error rate was
-caused by [MORAY-422](https://smartos.org/bugview/MORAY-422).
+**Network switch failures.**  In JPC, NETOPS-852 (blocked ports resulting from a
+firmware issue on certain switches) has resulted in a number of storage zones
+becomes unreachable.  This has resulted in at least two incidents in which not
+enough storage zones were available to allow Manta to take any writes.
 
 **Insufficient quotas on some Manatee zones after transient failures.**  Under
 SCI-297 and related incidents, we saw shards fail after having run out of local
@@ -298,36 +282,108 @@ been mitigated via monitoring until the underlying issues are addressed.
 caused loadbalancers to continue to use webapi instances that were not healthy,
 or caused loadbalancers to be restarted when not necessary.  These are discussed
 under [MANTA-3079](https://smartos.org/bugview/MANTA-3079) and
-[MANTA-2038](https://smartos.org/bugview/MANTA-2038).
+[MANTA-2038](https://smartos.org/bugview/MANTA-2038) (both now fixed).
+
+**Transient connection management issues.**  A very small ambient error rate was
+caused by [MORAY-422](https://smartos.org/bugview/MORAY-422) (now fixed).
+
+**Resharding.**  Resharding operations currently require individual shards to be
+offline for writes while hash rings are updated in all electric-moray instances.
+(See [RFD 103](https://github.com/joyent/rfd/blob/master/rfd/0103/README.md).)
+The severity of this is not very clear because immediate plans only involve
+resharding regions that are already out of capacity, and future reshard
+operations are not yet clear.
+
+**Major database upgrades.** Last year saw major PostgreSQL updates from 9.2 to
+9.6 in production deployments.  In stock configuraiton, this requires several
+hours of downtime per shard because peers need to be rebuilt and replication
+re-established.  Options exist to improve this (e.g., allow writes to only the
+single peer during this mode); however, at this time, we do not expect to make
+another major PostgreSQL upgrade in the foreseeable future.
 
 
-### Other contributors to unavailability
+### Out-of-scope causes
 
-We described above a number of major causes of unavailability.
+**Transit issues.** A number of client-visible incidents have resulted from
+failures in the network circuits being used between clients and Manta.  These
+are beyond the scope of this RFD.
 
-<!--
-    XXX talk about: canary deployments, better deployment tooling, better
-    monitoring (RFD 85, plus metrics).  Relate this to the issues above.
--->
+**Insufficient storage capacity.**  In several SPC deployments, Manta ran out of
+capacity well ahead of the ability to provision more.  This seems worth
+mentioning, but this failure mode is beyond the scope of this RFD.
+
+
+
+
+## Suggested software changes
+
+We believe that most of the downtime in the last year was not caused by simple
+component failure or planned updates.  (Interestingly, very few issues appear
+to have started with rollout of a bad change.)  That said, most of the complex
+failures leading to downtime have been addressed already, leaving mostly work
+to reduce the impact of planned updates and PostgreSQL takeovers:
+
+Summary                           | Severity | Tickets
+--------------------------------- | -------- | -------
+postgres: planned takeover time   | high     | [MANATEE-380](https://smartos.org/bugview/MANATEE-380), [MANTA-3260](https://smartos.org/bugview/MANTA-3260)
+postgres: unplanned takeover time | high     | [MANTA-3260](https://smartos.org/bugview/MANTA-3260)
+webapi: planned updates           | moderate | [MANTA-2834](https://smartos.org/bugview/MANTA-2834)
+loadbalancer: planned upates      | moderate | N/A -- needs further specification
+resharding: write downtime        | moderate | [MANTA-3584](https://smartos.org/bugview/MANTA-3584)
+moray: planned updates            | low      | [MANTA-3233](https://smartos.org/bugview/MANTA-3233)
+electric-moray: planned updates   | low      | [MANTA-2834](https://smartos.org/bugview/MANTA-2834), [MANTA-3232](https://smartos.org/bugview/MANTA-3232)
+authcache: planned updates        | very low | [MANTA-3585](https://smartos.org/bugview/MANTA-3585)
+storage: planned updates          | very low | [MANTA-3586](https://smartos.org/bugview/MANTA-3586)
+postgres: major version bump      | very low | N/A -- needs further specification
+
+A few incidents were caused by operational problems that can be monitored --
+e.g., switch port failure or unexpected high disk utilization.  These
+conditions are currently being monitored, and more sophisticated monitoring is
+also being put together.
+
+Additionally, in order to be able to confidently update components without fear
+of generating incidents, we should be seriously considering canary deployments.
+See [MANTA-3587](https://smartos.org/bugview/MANTA-3587) for details.
+
+
+## Possible process changes
+
+It's one thing to address known causes of unavailability in order to maximize a
+service's uptime.  If we want to establish specific consequences for quantified
+levels of downtime (i.e., an SLA with specific availability targets), we would
+want to:
+
+- Establish better historical monitoring of error rates.  We have historical
+  data in access logs, but we only have a limited amount of data readily
+  accessible in real time, which makes it very hard to evaluate an historical
+  error rate.
+- Establish a target error budget, as described in [The Calculus of Service
+  Availability](https://queue.acm.org/detail.cfm?id=3096459).  An error budget
+  quantifies the amount of downtime per period (e.g., per month) that's allowed
+  by the SLA.  This provides criteria for operational decision-making -- for
+  example, if we want to roll out a risky change, we can use the error budget to
+  assess our current risk tolerance.  Obviously, this is only effective so long
+  as the availability requirements that define the error budget actually match
+  customers' expectations.
+- Establish better ways of associating specific periods of downtime with
+  specific issues.  In order to prioritize work on improving availability, we
+  want to quantify the error budget consumed by each issue.
+- Implement canary deployments with straightforward rollback controls, mentioned
+  earlier.  This piece is essential to be able to reliably deploy updates when
+  any downtime is so costly.  (As an example, in at least two of the cases
+  involving memory leaks that resulted in significant reductions in Manta
+  throughput, a canary-based deployment ought to have quickly identified the
+  issue and facilitated rapid rollback.)
+
+At this time, it's not clear whether we want to focus on quantifying an error
+budget, but the other pieces are likely worth prioritizing.
 
 
 
 ## Appendix: Defining Availability
 
-<!--
-For reasons described in the appendix, even a phrase like "99.9%
-availability" is not nearly specific enough for many situations, and
-[service-level agreements
-(SLAs)](https://en.wikipedia.org/wiki/Service-level_agreement) between customers
-and service providers define much more specific metrics as well as consequences
-for missing targets.
-
--->
-
-
-This section describes the many ways in which a phse like "99.9% availability"
-ignores a great deal of underlying complexity in what this number actually
-means.  As described above, this RFD focuses on an SLO, not an SLA.
+This section discusses a number of assumptions that go into a phrase like "99.9%
+availability".
 
 **Over what time period is the rate measured?**  For an issue that affects 5% of
 requests in a 5-second window, what's the impact to availability?  Over those 5
@@ -335,8 +391,8 @@ seconds, availability might be 95%.  Over the surrounding minute, availability
 might be 99.6%.  Within arbitrarily short periods within that window,
 availability might be 0%.  In reality, these windows are often not even so
 well-defined as "5% of the requests over a 5-second period", so choosing the
-time interval becomes a real problem.  As discussed below, the finer this
-interval, the more expensive it is to measure availability.
+time interval becomes a real problem.  Further, the finer this interval, the
+more expensive it is to measure availability.
 
 **Exactly what constitutes a successful request?  Does latency count?**  In many
 systems, performance is part of correctness -- and certainly pathological
@@ -396,15 +452,10 @@ Operators are still expected to monitor utilization and plan capacity expansion
 to avoid overload, but behavior changes by the handful of end users can
 significantly affect overall utilization in the short term.
 
-<!--
-SLAs exist to define expectations between customers and service providers, and
-real-world SLAs define consequences for missing targets.   The 99.9% target
-reflects a rough estimate of where we want to be that's based on competitive
-services.  See, for example, the [Amazon S3
+[Service-level agreements
+(SLAs)](https://en.wikipedia.org/wiki/Service-level_agreement) exist to define
+expectations between customers and service providers, and real-world SLAs define
+consequences for missing targets.   See, for example, the [Amazon S3
 SLA](https://aws.amazon.com/s3/sla/), which only considers explicit error
 responses (i.e., ignores latency); examines error rate in 5-minute windows; and
 credits end users based on a monthly average of these error rates.
-
-There are a number of dimensions of availability that are not
-captured in this brief description:
--->
